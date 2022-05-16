@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+	<title>Puzzle Generator</title>
+	<meta charset="utf-8">
+	<meta name="description" content="Jigsaw Puzzle Generator">
+	<meta name="author" content="Jacob Valore">
+	<script src="./scripts/jquery-3.3.1-min.js"></script>
+	<script src="./scripts/pds-generator-min.js"></script>
+	<script src="./scripts/catmull-rom.js"></script>
+	<script src="./scripts/voronoi-min.js"></script>
+	<link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+	<div class="content">
+		<div class="sidebar-left">
+			<div class="input-container">
+				<div class="label">Width:</div>
+				<input class="small-textbox tb-width" type="text" value=500>
+			</div>
+			<div class="input-container">
+				<div class="label">Height:</div>
+				<input class="small-textbox tb-height" type="text" value=300>
+			</div>
+			<div class="input-container">
+				<div class="label">Min-Distance:</div>
+				<input class="small-textbox tb-min-distance" type="text" value=30>
+			</div>
+			<div class="input-container">
+				<div class="label">Max-Jitter</div>
+				<input class="small-textbox tb-max-jitter" type="text" value=10>
+			</div>
+			<input class="button" type="submit" value="Generate Full Lines (PDS)" onclick="gen_full_lines(true)">
+			<input class="button" type="submit" value="Generate Full Lines (Rand)" onclick="gen_full_lines(false)">
+			<input class="button" type="submit" value="Generate Sample Voronoi (PDS)" onclick="gen_voronoi(true)">
+			<input class="button" type="submit" value="Generate Sample Voronoi (Rand)" onclick="gen_voronoi(false)">
+			<input class="button" type="submit" value="Generate Sample Radial" onclick="gen_radial()">
+			<input class="button" type="submit" value="Generate Sample Grid" onclick="gen_grid()">
+		</div>
+		<div class="main-content">
+			<div class="puzzle-container">
+
+			</div>
+		</div>
+	</div>
+</body>
+<script>
+	// Initialize values to default and show current svg
+	var vals = {width: +$('.tb-width').val(),
+				height: +$('.tb-height').val(),
+				min_dist: +$('.tb-min-distance').val(),
+				max_jitter: +$('.tb-max-jitter').val()};
+	build_svg();
+	/* TODO:
+	 *	4. Change build_svg() to make a group with a mask of the voronoi cell
+	 *	5. Make gen_full_lines button to put all of that together
+	*/
+
+	// Full Generation Functions
+	function gen_full_lines(usePDS = false, percentGrids = 0){
+		// Make a voronoi diagram
+		var voronoi = make_voronoi(usePDS = usePDS);
+		// Get svg polygon "points" strings for each (valid) cell
+		// 		and get the site origin for the radial's translate command
+		var cell_mask_polygons = [];
+		var cell_sites = [];
+		for(var i = 0; i < voronoi.cells.length; i++){
+			var s = '';
+			for(var j = 0; j < voronoi.cells[i].halfedges.length; j++)
+				s += voronoi.cells[i].halfedges[j].getStartpoint().x + ',' + voronoi.cells[i].halfedges[j].getStartpoint().y + ' ';
+			if(s.length > 0){
+				cell_mask_polygons.push(s);
+				cell_sites.push(voronoi.cells[i].site);
+			}
+		}
+		// For each cell, generate a radial or grid and their transform
+		var cell_lines = [];
+		var cell_points = [];
+		var shape_transforms = [];
+		for(var i = 0; i < cell_mask_polygons.length; i++){
+			if(Math.random()<percentGrids){
+				var shape = make_grid();
+				shape_transforms.push('rotate('+ (360*Math.random()) +' '+ vals.width/2 +' '+ vals.height/2 +')');
+			} else {
+				var shape = make_radial();
+				shape_transforms.push('rotate('+ (360*Math.random()) +' '+cell_sites[i].x+' '+cell_sites[i].y+') translate('+cell_sites[i].x+' '+cell_sites[i].y+')');
+			}
+			cell_lines.push(shape.lines);
+			cell_points.push(shape.points);
+		}
+		// Make voronoi lines and cell groups
+		// vals.lines = [];
+		// for(var i = 0; i < voronoi.edges.length; i++)
+		// 	vals.lines.push('M'+voronoi.edges[i].va.x+','+voronoi.edges[i].va.y+' L'+voronoi.edges[i].vb.x+','+voronoi.edges[i].vb.y);
+		vals.groups = {masks: cell_mask_polygons, lines: cell_lines, points: cell_points, transforms: shape_transforms};
+		// Build SVG
+		build_svg();
+	}
+
+	// Sample Generation Functions
+	function gen_voronoi(usePDS = false){
+		var voronoi = make_voronoi(usePDS = usePDS);
+		vals.lines = [];
+		for(var i = 0; i < voronoi.edges.length; i++)
+			vals.lines.push('M'+voronoi.edges[i].va.x+','+voronoi.edges[i].va.y+' L'+voronoi.edges[i].vb.x+','+voronoi.edges[i].vb.y);
+		build_svg();
+	}
+	function gen_radial(){
+		// TODO: (for full gen)
+		// Transform it with a rotation
+		// Then translate it to the site of the voronoi shape
+		var radial = make_radial();
+		vals.lines = radial.lines;
+		vals.points = radial.points;
+		build_svg();
+	}
+	function gen_grid(){
+		// TODO: (for full gen)
+		// Transform it with just a rotation
+		var grid = make_grid();
+		vals.lines = grid.lines;
+		vals.points = grid.points;
+		build_svg();
+	}
+
+	// Make Functions
+	function make_voronoi(usePDS = true, nSites = 13, minDist = 100, maxDist = 200){
+		lines = [];
+		if(usePDS){
+			// Generate sites with PDS (doesn't use nSites)
+			var pds2D = new PoissonDiskSampling({
+				shape: [vals.width, vals.height],
+				minDistance: minDist,
+				maxDistance: maxDist
+			});
+			var sites = pds2D.fill();
+			for(var i = 0; i < sites.length; i++)
+				sites[i] = {x: sites[i][0], y: sites[i][1]};
+		} else {
+			// Or generate sites with regular randomness (doesn't use min/max distance)
+			var sites = [];
+			for(var i = 0; i < nSites; i++)
+				sites.push({x: vals.width*Math.random(), y: vals.height*Math.random()});
+		}
+		var voro = new Voronoi();
+		var bbox = {xl: 0, xr: vals.width, yt: 0, yb: vals.height};
+		return voro.compute(sites, bbox);
+	}
+	function make_radial(){
+		var lines = [];
+		var points = [];
+		// Start the circle somewhere out on the x axis
+		var cx = Math.random()*Math.max(vals.width,vals.height)*2, cy = 0;
+		var ringMax = Math.ceil( ((cx**2 + vals.height**2)**0.5) / vals.min_dist )+15;
+		for(var i = Math.max(1,ringMax-30); i < ringMax; i++){ //i affects the radius
+			var points_str = '';
+			var nPoints = Math.floor(6.28*i);
+			for(var j = 0; j < nPoints; j++){ //j affects the angle
+				var x_jitter = vals.max_jitter*(Math.random()-0.5);
+				var y_jitter = vals.max_jitter*(Math.random()-0.5);
+				points_str += (cx+i*vals.min_dist*Math.cos(j*6.28/nPoints)+x_jitter) + ',';
+				points_str += (cy+i*vals.min_dist*Math.sin(j*6.28/nPoints)+y_jitter) + ' ';
+				points.push([cx+i*vals.min_dist*Math.cos(j*6.28/nPoints)+x_jitter,
+								cy+i*vals.min_dist*Math.sin(j*6.28/nPoints)+y_jitter]);
+			}
+			points_str += (cx+i*vals.min_dist)+','+cy;
+			//TODO: Fix catmull so the circle connects back smoothly
+			lines.push('M'+(cx+i*vals.min_dist)+','+cy+' '+catmullRom2bezier(points_str));
+		}
+		return {lines: lines, points: points};
+	}
+	function make_grid(){
+		var lines = [];
+		var points = [];
+		var nPoints = Math.ceil( ((vals.width**2 + vals.height**2)**0.5) / vals.min_dist )+1;
+		// start = center - grid_size/2, center = axis_length/2, grid_size = (nPoints-1)*dist_between_points
+		var x_start = vals.width/2 - (nPoints-1)*vals.min_dist/2, y_start = vals.height/2 - (nPoints-1)*vals.min_dist/2;
+		for(var i = 0; i < nPoints; i++){
+			var points_str = '';
+			for(var j = 0; j < nPoints; j++){
+				var x_jitter = vals.max_jitter*(Math.random()-0.5);
+				var y_jitter = vals.max_jitter*(Math.random()-0.5);
+				points_str += (x_start+i*vals.min_dist+x_jitter) + ',';
+				points_str += (y_start+j*vals.min_dist+y_jitter) + ' ';
+				points.push([x_start+i*vals.min_dist+x_jitter,
+								y_start+j*vals.min_dist+y_jitter]);
+			}
+			lines.push('M'+(x_start+i*vals.min_dist)+','+(y_start)+' '+catmullRom2bezier(points_str));
+		}
+		return {lines: lines, points: points};
+	}
+
+	// Helper Functions
+	function build_svg(){
+		var svg = '';
+		if(vals.width && vals.height){
+			svg = '';
+			svg += '<svg version="1.1" viewbox="0 0 '+vals.width+' '+vals.height+'" class="puzzle" xmlns="http://www.w3.org/2000/svg">';
+			svg += '<style>';
+			svg += '.outline{ fill: none; stroke: black; stroke-width: 2; }';
+			svg += '.point{ fill: black; stroke: none; }';
+			svg += '</style>';
+			if(vals.lines){
+				for(var i = 0; i < vals.lines.length; i++)
+					svg += '<path class="outline" d="'+vals.lines[i]+'"/>';
+			}
+			if(vals.points){
+				for(var i = 0; i < vals.points.length; i++)
+					svg += '<circle class="point" cx="'+vals.points[i][0]+'" cy="'+vals.points[i][1]+'" r="2"/>';
+			}
+			if(vals.groups){
+				// Start by setting up the clipPath for each cell
+				svg += '<defs>';
+				for(var i = 0; i < vals.groups.masks.length; i++){
+					svg += '<clipPath id="clipper'+i+'">';
+					svg += '<polygon points="'+vals.groups.masks[i]+'"/>';
+					svg += '</clipPath>';
+				}
+				svg += '</defs>';
+				// Now create the group
+				for(var i = 0; i < vals.groups.masks.length; i++){
+					svg += '<g clip-path="url(#clipper'+i+')">';
+					svg += '<g transform="'+vals.groups.transforms[i]+'">';
+					console.log(vals.groups.lines);
+					for(var j = 0; j < vals.groups.lines[i].length; j++)
+						svg += '<path class="outline" d="'+vals.groups.lines[i][j]+'"/>';
+					// for(var j = 0; i < vals.groups.points[i].length; j++)
+					// 	svg += '<circle class="point" cx="'+vals.points[i][j][0]+'" cy="'+vals.points[i][j][1]+'" r="2"/>';
+					svg += '</g>';
+					svg += '</g>';
+				}
+			}
+			svg += '<rect class="outline" width="100%" height="100%"/>';
+			svg += '</svg>';
+		}
+		$('.puzzle-container').html(svg);
+	}
+	// Update the variables in vals
+	$('.tb-width').on('focusout', function() {
+		vals.width = +this.value;
+		build_svg();
+	});
+	$('.tb-height').on('focusout', function() {
+		vals.height = +this.value;
+		build_svg();
+	});
+	$('.tb-min-distance').on('focusout', function() {
+		vals.min_dist = +this.value;
+	});
+	$('.tb-max-jitter').on('focusout', function() {
+		vals.max_jitter = +this.value;
+	});
+	// Focusout when enter is pressed
+	$('.small-textbox').keypress(function(e) {
+		if(e.which == 13)
+			$(this).blur();
+	});
+	// Deprecated
+	function gen_center_points(){
+		// Create point generator
+		var pds2D = new PoissonDiskSampling({
+			shape: [vals.width, vals.height],
+			minDistance: vals.min_dist,
+			maxDistance: vals.max_dist,
+			tries: 100000
+		});
+		// Add edge points as constraints
+		for(var i = 0; i < vals.points.length; i++){
+			pds2D.addPoint([vals.points[i][0], vals.points[i][1]]);
+		}
+		// Generate the center points
+		vals.points = pds2D.fill();
+		console.log(vals.points);
+	}
+</script>
