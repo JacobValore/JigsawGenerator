@@ -44,7 +44,7 @@ p{
 }
 .sidebar-left{
 	flex-shrink: 0;
-	width: 300px;
+	width: 310px;
 	padding: 20px;
 	border-right: 1.2px solid black;
 
@@ -85,12 +85,29 @@ p{
 	display: flex;
 	flex-direction: row;
 }
-.label{
+.label,
+.small-checkbox{
 	flex-shrink: 0;
 	margin-right: 10px;
 }
 .small-textbox{
 	width: 50px;
+}
+.big-label{
+	flex-grow: 1;
+}
+.settings-box{
+	border: 1px solid black;
+	padding: 5px;
+}
+.settings-box > *:not(:last-child){
+	margin-bottom: 10px;
+}
+.tall{
+	margin-bottom: 15px;
+}
+.bold{
+	font-weight: bold;
 }
 
 .button{
