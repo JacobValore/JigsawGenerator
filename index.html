@@ -66,6 +66,7 @@
 			<input class="button" type="submit" value="Generate Sample Voronoi" onclick="gen_voronoi()">
 			<input class="button" type="submit" value="Generate Sample Radial" onclick="gen_radial()">
 			<input class="button" type="submit" value="Generate Sample Grid" onclick="gen_grid()">
+			<input class="button" type="submit" value="Download SVG File" onclick="download_file()">
 		</div>
 		<div class="main-content">
 			<div class="puzzle-container">
@@ -243,40 +244,39 @@
 	function build_svg(){
 		var svg = '';
 		if(vals.width && vals.height){
-			svg = '';
-			svg += '<svg version="1.1" viewbox="0 0 '+vals.width+' '+vals.height+'" class="puzzle" xmlns="http://www.w3.org/2000/svg">';
-			svg += '<style>';
-			svg += '.outline{ fill: none; stroke: black; stroke-width: 2; }';
-			svg += '.point{ fill: black; stroke: none; }';
-			svg += '</style>';
+			svg += '<svg version="1.1" viewbox="0 0 '+vals.width+' '+vals.height+'" class="puzzle" xmlns="http://www.w3.org/2000/svg">\n';
+			svg += '<style>\n';
+			svg += '	.outline{ fill: none; stroke: black; stroke-width: 2; }\n';
+			svg += '	.point{ fill: black; stroke: none; }\n';
+			svg += '</style>\n';
+			if(vals.groups){
+				// Start by setting up the clipPath for each cell
+				svg += '<defs>\n';
+				for(var i = 0; i < vals.groups.masks.length; i++){
+					svg += '	<clipPath id="clipper'+i+'">\n';
+					svg += '		<polygon points="'+vals.groups.masks[i]+'"/>\n';
+					svg += '	</clipPath>\n';
+				}
+				svg += '</defs>\n';
+				// Now create the group
+				for(var i = 0; i < vals.groups.masks.length; i++){
+					svg += '<g clip-path="url(#clipper'+i+')">\n';
+					svg += '	<g transform="'+vals.groups.transforms[i]+'">\n';
+					for(var j = 0; j < vals.groups.lines[i].length; j++)
+						svg += '		<path class="outline" d="'+vals.groups.lines[i][j]+'"/>\n';
+					svg += '	</g>\n';
+					svg += '</g>\n';
+				}
+			}
 			if(vals.lines){
 				for(var i = 0; i < vals.lines.length; i++)
-					svg += '<path class="outline" d="'+vals.lines[i]+'"/>';
+					svg += '<path class="outline" d="'+vals.lines[i]+'"/>\n';
 			}
 			if(vals.points){
 				for(var i = 0; i < vals.points.length; i++)
-					svg += '<circle class="point" cx="'+vals.points[i][0]+'" cy="'+vals.points[i][1]+'" r="2"/>';
+					svg += '<circle class="point" cx="'+vals.points[i][0]+'" cy="'+vals.points[i][1]+'" r="2"/>\n';
 			}
-			if(vals.groups){
-				// Start by setting up the clipPath for each cell
-				svg += '<defs>';
-				for(var i = 0; i < vals.groups.masks.length; i++){
-					svg += '<clipPath id="clipper'+i+'">';
-					svg += '<polygon points="'+vals.groups.masks[i]+'"/>';
-					svg += '</clipPath>';
-				}
-				svg += '</defs>';
-				// Now create the group
-				for(var i = 0; i < vals.groups.masks.length; i++){
-					svg += '<g clip-path="url(#clipper'+i+')">';
-					svg += '<g transform="'+vals.groups.transforms[i]+'">';
-					for(var j = 0; j < vals.groups.lines[i].length; j++)
-						svg += '<path class="outline" d="'+vals.groups.lines[i][j]+'"/>';
-					svg += '</g>';
-					svg += '</g>';
-				}
-			}
-			svg += '<rect class="outline" width="100%" height="100%"/>';
+			svg += '<rect class="outline" width="'+vals.width+'" height="'+vals.height+'"/>\n';
 			svg += '</svg>';
 		}
 		$('.puzzle-container').html(svg);
@@ -323,4 +323,16 @@
 		if(e.which == 13)
 			$(this).blur();
 	});
+	// Add download button
+	function download_file() {
+	    var svgData = document.querySelector(".puzzle").outerHTML;
+	    var svgBlob = new Blob([svgData], {type:"image/svg+xml;charset=utf-8"});
+	    var svgUrl = URL.createObjectURL(svgBlob);
+	    var downloadLink = document.createElement("a");
+	    downloadLink.href = svgUrl;
+	    downloadLink.download = "jigsaw.svg";
+	    document.body.appendChild(downloadLink);
+	    downloadLink.click();
+	    document.body.removeChild(downloadLink);
+	}
 </script>
